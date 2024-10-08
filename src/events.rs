@@ -32,7 +32,8 @@ impl Event {
 
     pub fn as_system_event(&self) -> Option<SystemEvent> {
         if self.is_system_event() {
-            serde_json::from_value(serde_json::to_value(self).unwrap()).ok()
+            let data: SystemEventData = serde_json::from_value(self.data.clone()).unwrap();
+            Some(SystemEvent::new(self.event.clone(), self.channel.clone(), data))
         } else {
             None
         }
