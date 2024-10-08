@@ -5,7 +5,6 @@ use serde_json::Value;
 pub struct Event {
     pub event: String,
     pub channel: Option<String>,
-    #[serde(with = "json_string")]
     pub data: Value,
 }
 
@@ -21,7 +20,24 @@ impl Event {
     pub fn is_system_event(&self) -> bool {
         self.event.starts_with("pusher:")
     }
+
+    pub fn is_presence_event(&self) -> bool {
+        matches!(self.event.as_str(), "pusher:member_added" | "pusher:member_removed")
+    }
+
+    pub fn is_subscription_event(&self) -> bool {
+        self.event == "pusher:subscription_succeeded" || self.event == "pusher:subscription_error"
+    }
+
+    pub fn as_system_event(&self) -> Option<SystemEvent> {
+        if self.is_system_event() {
+            serde_json::from_value(serde_json::to_value(self).unwrap()).unwrap()
+        } else {
+            None
+        }
+    }
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemEvent {
@@ -114,25 +130,24 @@ impl SystemEvent {
     }
 }
 
-mod json_string {
-    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-    use serde_json::Value;
-
-    pub fn serialize<S>(value: &Value, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        value.to_string().serialize(serializer)
+impl SystemEvent {
+    pub fn is_presence_event(&self) -> bool {
+        matches!(self.event.as_str(), "pusher:member_added" | "pusher:member_removed")
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        serde_json::from_str(&s).map_err(D::Error::custom)
+    pub fn is_subscription_event(&self) -> bool {
+        self.event == "pusher:subscription_succeeded" || self.event == "pusher:subscription_error"
+    }
+
+    pub fn as_event(&self) -> Event {
+        Event {
+            event: self.event.clone(),
+            channel: self.channel.clone(),
+            data: serde_json::to_value(&self.data).unwrap(),
+        }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +167,40 @@ mod tests {
         assert_eq!(event.event, deserialized.event);
         assert_eq!(event.channel, deserialized.channel);
         assert_eq!(event.data, deserialized.data);
+    }
+
+    #[test]
+    fn test_event_is_system_event() {
+        let event = Event::new(
+            "pusher:connection_established".to_string(),
+            None,
+            json!({"socket_id": "socket123", "activity_timeout": 120}),
+        );
+
+        assert!(event.is_system_event());
+    }
+
+    #[test]
+    fn test_event_as_system_event() {
+        let event = Event::new(
+            "pusher:connection_established".to_string(),
+            None,
+            json!({"socket_id": "socket123", "activity_timeout": 120}),
+        );
+
+        if let Some(system_event) = event.as_system_event() {
+            assert_eq!(system_event.event, "pusher:connection_established");
+            assert_eq!(system_event.channel, None);
+
+            if let SystemEventData::ConnectionEstablished { socket_id, activity_timeout } = system_event.data {
+                assert_eq!(socket_id, "socket123");
+                assert_eq!(activity_timeout, 120);
+            } else {
+                panic!("Unexpected event data");
+            }
+        } else {
+            panic!("Expected system event");
+        }
     }
 
     #[test]
@@ -240,44 +289,6 @@ mod tests {
             assert_eq!(message, "Error message");
         } else {
             panic!("Unexpected event data");
-        }
-    }
-}
-
-
-impl Event {
-    pub fn is_presence_event(&self) -> bool {
-        matches!(self.event.as_str(), "pusher:member_added" | "pusher:member_removed")
-    }
-
-    pub fn is_subscription_event(&self) -> bool {
-        self.event == "pusher:subscription_succeeded" || self.event == "pusher:subscription_error"
-    }
-
-    pub fn as_system_event(&self) -> Option<SystemEvent> {
-        if self.is_system_event() {
-            serde_json::from_value(serde_json::to_value(self).unwrap()).ok()
-        } else {
-            None
-        }
-    }
-}
-
-
-impl SystemEvent {
-    pub fn is_presence_event(&self) -> bool {
-        matches!(self.event.as_str(), "pusher:member_added" | "pusher:member_removed")
-    }
-
-    pub fn is_subscription_event(&self) -> bool {
-        self.event == "pusher:subscription_succeeded" || self.event == "pusher:subscription_error"
-    }
-
-    pub fn as_event(&self) -> Event {
-        Event {
-            event: self.event.clone(),
-            channel: self.channel.clone(),
-            data: serde_json::to_value(&self.data).unwrap(),
         }
     }
 }
