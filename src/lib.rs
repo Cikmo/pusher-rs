@@ -71,7 +71,7 @@ impl PusherClient {
     ///
     /// A `PusherResult` containing the new `PusherClient` instance.
     pub fn new(config: PusherConfig) -> PusherResult<Self> {
-        let auth = PusherAuth::new(&config.app_key, &config.app_secret);
+        let auth = PusherAuth::new(&config.app_key, &config.app_secret, config.auth_endpoint.as_deref());
         let (event_tx, event_rx) = mpsc::channel(100);
         let state = Arc::new(RwLock::new(ConnectionState::Disconnected));
         let event_handlers = Arc::new(RwLock::new(std::collections::HashMap::new()));
@@ -178,15 +178,26 @@ impl PusherClient {
     /// A `PusherResult` indicating success or failure.
     pub async fn subscribe(&mut self, channel_name: &str) -> PusherResult<()> {
         let channel = Channel::new(channel_name);
+
+        let mut auth: Option<String> = None;
+
+        if let ChannelType::Private = channel.channel_type() {
+            auth = Some(self.auth.authenticate_private_channel("socket_id", channel_name).await?);
+        }
+
         let mut channels = self.channels.write().await;
         channels.insert(channel_name.to_string(), channel);
 
-        let data = json!({
+        let mut data = json!({
             "event": "pusher:subscribe",
             "data": {
-                "channel": channel_name
+                "channel": channel_name,
             }
         });
+
+        if let Some(auth) = auth {
+            data["data"]["auth"] = json!(auth);
+        }
 
         self.send(serde_json::to_string(&data)?).await
     }

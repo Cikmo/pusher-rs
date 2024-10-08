@@ -6,25 +6,58 @@ use serde_json::{json, Value};
 use sha2::Sha256;
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
+use reqwest;
 
 type HmacSha256 = Hmac<Sha256>;
 
 pub struct PusherAuth {
     key: String,
     secret: String,
+    auth_endpoint: Option<String>,
 }
 
 impl PusherAuth {
-    pub fn new(key: &str, secret: &str) -> Self {
+    pub fn new(key: &str, secret: &str, auth_endpoint: Option<&str>) -> Self {
         Self {
             key: key.to_string(),
             secret: secret.to_string(),
+            auth_endpoint: auth_endpoint.map(|s| s.to_string()),
         }
     }
 
     pub fn authenticate_socket(&self, socket_id: &str, channel_name: &str) -> PusherResult<String> {
         let auth_signature = self.sign_socket(socket_id, channel_name)?;
         Ok(format!("{}:{}", self.key, auth_signature))
+    }
+
+    pub async fn authenticate_private_channel(
+        &self,
+        socket_id: &str,
+        channel_name: &str,
+    ) -> PusherResult<String> {
+        match &self.auth_endpoint {
+            None => {
+                return Err(PusherError::AuthError(
+                    "No auth endpoint provided".to_string(),
+                ))
+            },
+            Some(endpoint) => {
+                let client = reqwest::Client::new();
+                let mut data = BTreeMap::new();
+                data.insert("socket_id".to_string(), socket_id.to_string());
+                data.insert("channel_name".to_string(), channel_name.to_string());
+                let response = client.post(endpoint).form(&data).send().await?;
+                if response.status().is_success() {
+                    Ok(response.text().await?)
+                } else {
+                    Err(PusherError::AuthError(format!(
+                        "Failed to authenticate channel: {}",
+                        response.status()
+                    )))
+                }
+            },
+
+        }
     }
 
     pub fn authenticate_presence_channel(
@@ -149,14 +182,14 @@ mod tests {
 
     #[test]
     fn test_authenticate_socket() {
-        let auth = PusherAuth::new("key", "secret");
+        let auth = PusherAuth::new("key", "secret", None);
         let result = auth.authenticate_socket("socket_id", "channel_name");
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_authenticate_presence_channel() {
-        let auth = PusherAuth::new("key", "secret");
+        let auth = PusherAuth::new("key", "secret", None);
         let result = auth.authenticate_presence_channel(
             "socket_id",
             "presence-channel",
