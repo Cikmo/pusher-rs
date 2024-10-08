@@ -24,6 +24,9 @@ pub struct PusherConfig {
     /// The host to connect to. If None, the default Pusher host will be used.
     pub host: Option<String>,
 
+    /// The endpoint for private channels authentication.
+    pub auth_endpoint: Option<String>,
+
     /// The maximum number of reconnection attempts. Defaults to 6.
     pub max_reconnection_attempts: u32,
 
@@ -46,6 +49,7 @@ impl Default for PusherConfig {
             cluster: String::new(),
             use_tls: false,
             host: None,
+            auth_endpoint: None,
             max_reconnection_attempts: 6,
             backoff_interval: Duration::from_secs(1),
             activity_timeout: Duration::from_secs(120),
@@ -71,6 +75,7 @@ impl PusherConfig {
                 .map(|v| v.to_lowercase() == "true")
                 .unwrap_or(true),
             host: Some(host),
+            auth_endpoint: env::var("PUSHER_AUTH_ENDPOINT").ok(),
             max_reconnection_attempts: env::var("PUSHER_MAX_RECONNECTION_ATTEMPTS")
                 .ok()
                 .and_then(|v| v.parse().ok())
