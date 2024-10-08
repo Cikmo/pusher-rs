@@ -31,7 +31,7 @@ impl Event {
 
     pub fn as_system_event(&self) -> Option<SystemEvent> {
         if self.is_system_event() {
-            serde_json::from_value(serde_json::to_value(self).unwrap()).unwrap()
+            serde_json::from_value(serde_json::to_value(self).unwrap()).ok()
         } else {
             None
         }
