@@ -26,7 +26,7 @@ pub use auth::PusherAuth;
 pub use channels::{Channel, ChannelType};
 pub use config::PusherConfig;
 pub use error::{PusherError, PusherResult};
-pub use events::{Event, SystemEvent};
+pub use events::{Event, SystemEvent, SystemEventData};
 
 use websocket::{WebSocketClient, WebSocketCommand};
 
